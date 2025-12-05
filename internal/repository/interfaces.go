@@ -15,6 +15,8 @@ type ChronoWorkRepository interface {
 	FindByID(id uint) (*domain.ChronoWork, error)
 	// FindInRange finds ChronoWorks within a time range.
 	FindInRange(startTime, endTime time.Time) ([]domain.ChronoWork, error)
+	// FindByTitleToday finds a ChronoWork by title created today.
+	FindByTitleToday(title string) (*domain.ChronoWork, error)
 	// FindTracking finds all currently tracking ChronoWorks.
 	FindTracking() ([]domain.ChronoWork, error)
 	// FindByProjectTypeID finds ChronoWorks by project type ID.

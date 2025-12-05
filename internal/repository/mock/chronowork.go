@@ -97,6 +97,23 @@ func (r *ChronoWorkRepository) FindTracking() ([]domain.ChronoWork, error) {
 	return result, nil
 }
 
+// FindByTitleToday finds a ChronoWork by title created today.
+func (r *ChronoWorkRepository) FindByTitleToday(title string) (*domain.ChronoWork, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	today := time.Now()
+	startOfDay := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
+	endOfDay := time.Date(today.Year(), today.Month(), today.Day(), 23, 59, 59, 0, time.Local)
+
+	for _, cw := range r.data {
+		if cw.Title == title && cw.CreatedAt.After(startOfDay) && cw.CreatedAt.Before(endOfDay) {
+			return cw, nil
+		}
+	}
+	return nil, nil
+}
+
 // FindByProjectTypeID finds ChronoWorks by project type ID.
 func (r *ChronoWorkRepository) FindByProjectTypeID(projectTypeID uint) ([]domain.ChronoWork, error) {
 	r.mu.RLock()

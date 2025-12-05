@@ -191,8 +191,13 @@ func (f *Form) store() error {
 		}
 	}
 
+	// 4. ユースケースを呼び出す（ビジネスロジックに委譲）
 	if _, err := f.chronoWorkUC.Create(title, projectTypeID, tagID); err != nil {
 		log.Println(err)
+		// エラーメッセージを表示（重複エラーの場合）
+		if err.Error() == "work with this title already exists today" {
+			log.Printf("Duplicate title detected: %s", title)
+		}
 		return err
 	}
 	return nil

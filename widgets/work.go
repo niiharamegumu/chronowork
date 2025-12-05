@@ -250,6 +250,18 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					newChronoWork, err := w.chronoWorkUC.Create(chronoWork.Title, chronoWork.ProjectTypeID, chronoWork.TagID)
 					if err != nil {
 						log.Println(err)
+						// 重複エラーの場合はモーダルで通知
+						if err.Error() == "work with this title already exists today" {
+							modal := tview.NewModal().
+								SetText("A work with this title already exists today.").
+								AddButtons([]string{"OK"}).
+								SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+									tui.DeleteModal()
+									tui.SetFocus("mainWorkContent")
+								})
+							tui.SetModal(modal)
+							tui.SetFocus("modal")
+						}
 						break
 					}
 					w.chronoWorkUC.StartTracking(newChronoWork.ID)
