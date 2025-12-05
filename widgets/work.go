@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+	"github.com/niiharamegumu/chronowork/internal/domain"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/timeutil"
 	"github.com/rivo/tview"
@@ -29,27 +29,31 @@ var (
 )
 
 type Work struct {
-	Table *tview.Table
+	Table        *tview.Table
+	chronoWorkUC *usecase.ChronoWorkUseCase
+	settingUC    *usecase.SettingUseCase
 }
 
-func NewWork() *Work {
+func NewWork(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase) *Work {
 	work := &Work{
 		Table: tview.NewTable().
 			SetSelectable(true, false).
 			SetFixed(1, 1),
+		chronoWorkUC: chronoWorkUC,
+		settingUC:    settingUC,
 	}
 	return work
 }
 
-func (w *Work) GenerateInitWork(tui *service.TUI) (*Work, error) {
+func (w *Work) GenerateInitWork(tui *service.TUI, relativeDays int) (*Work, error) {
 	w.setHeader()
-	if err := w.setBody(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+	if err := w.setBody(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
-func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
+func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relativeDays int) {
 	w.Table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyRune:
@@ -63,7 +67,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 			case 'a':
 				// add new work
 				form.Form.Clear(true)
-				form.ConfigureStoreForm(tui, w)
+				form.ConfigureStoreForm(tui, w, relativeDays)
 				tui.SetFocus("mainWorkForm")
 			case 'u':
 				// update work
@@ -75,13 +79,13 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					uintId := uint(intId)
-					chronoWork, err := models.FindChronoWork(db.DB, uintId)
+					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
 						log.Println(err)
 						break
 					}
 					form.Form.Clear(true)
-					form.configureUpdateForm(tui, w, &chronoWork)
+					form.configureUpdateForm(tui, w, chronoWork, relativeDays)
 					tui.SetFocus("mainWorkForm")
 				}
 			case 'r':
@@ -94,13 +98,13 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					uintId := uint(intId)
-					chronoWork, err := models.FindChronoWork(db.DB, uintId)
+					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
 						log.Println(err)
 						break
 					}
 					form.Form.Clear(true)
-					form.configureTimerForm(tui, w, &chronoWork)
+					form.configureTimerForm(tui, w, chronoWork, relativeDays)
 					tui.SetFocus("mainWorkForm")
 				}
 			case 'd':
@@ -118,10 +122,10 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 							id := cell.Text
 							if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 								uintId := uint(intId)
-								if err := models.DeleteChronoWork(db.DB, uintId); err != nil {
+								if err := w.chronoWorkUC.Delete(uintId); err != nil {
 									log.Println(err)
 								}
-								if err := w.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+								if err := w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 									log.Println(err)
 								}
 							}
@@ -156,7 +160,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					unitId := uint(intId)
-					chronoWork, err := models.FindChronoWork(db.DB, unitId)
+					chronoWork, err := w.chronoWorkUC.FindByID(unitId)
 					if err != nil {
 						log.Println(err)
 						break
@@ -178,17 +182,17 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					uintId := uint(intId)
-					chronoWork, err := models.FindChronoWork(db.DB, uintId)
+					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
 						log.Println(err)
 						break
 					}
 					if chronoWork.Confirmed {
-						chronoWork.ConfirmedChronoWork(db.DB, false)
+						w.chronoWorkUC.UpdateConfirmed(uintId, false)
 					} else {
-						chronoWork.ConfirmedChronoWork(db.DB, true)
+						w.chronoWorkUC.UpdateConfirmed(uintId, true)
 					}
-					if err := w.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+					if err := w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 						log.Println(err)
 					}
 					w.Table.Select(row, 0)
@@ -204,12 +208,12 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 			id := cell.Text
 			if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 				uintId := uint(intId)
-				chronoWork, err := models.FindChronoWork(db.DB, uintId)
+				chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 				if err != nil {
 					log.Println(err)
 					break
 				}
-				chronoWorks, err := models.FindTrackingChronoWorks(db.DB)
+				chronoWorks, err := w.chronoWorkUC.FindTracking()
 				if err != nil {
 					log.Println(err)
 					break
@@ -218,7 +222,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				if len(chronoWorks) > 0 {
 					for _, cw := range chronoWorks {
 						if cw.ID != chronoWork.ID || !timeutil.IsToday(cw.CreatedAt) {
-							if err := cw.StopTrackingChronoWorks(db.DB); err != nil {
+							if err := w.chronoWorkUC.StopTracking(cw.ID); err != nil {
 								log.Println(err)
 								break
 							}
@@ -228,29 +232,32 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer) {
 				if timeutil.IsToday(chronoWork.CreatedAt) {
 					// target tracking work
 					if chronoWork.IsTracking {
-						chronoWork.StopTrackingChronoWorks(db.DB)
+						w.chronoWorkUC.StopTracking(uintId)
 						timer.ResetSetText()
 						timer.StopCalculateSeconds()
 					} else {
-						chronoWork.StartTrackingChronoWork(db.DB)
-						timer.SetStartTimer(chronoWork.StartTime)
+						w.chronoWorkUC.StartTracking(uintId)
+						// Refetch to get updated StartTime
+						updatedWork, _ := w.chronoWorkUC.FindByID(uintId)
+						timer.SetStartTimer(updatedWork.StartTime)
 						timer.SetCalculateSeconds(tui)
-						timer.SetTimerText(chronoWork)
+						timer.SetTimerText(*updatedWork)
 					}
-					w.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime())
+					w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime())
 					w.Table.Select(row, 0)
 				} else {
 					// chronowork copy
-					newChronoWork, err := models.CreateChronoWork(db.DB, chronoWork.Title, chronoWork.ProjectTypeID, chronoWork.TagID)
+					newChronoWork, err := w.chronoWorkUC.Create(chronoWork.Title, chronoWork.ProjectTypeID, chronoWork.TagID)
 					if err != nil {
 						log.Println(err)
 						break
 					}
-					newChronoWork.StartTrackingChronoWork(db.DB)
-					timer.SetStartTimer(newChronoWork.StartTime)
+					w.chronoWorkUC.StartTracking(newChronoWork.ID)
+					updatedWork, _ := w.chronoWorkUC.FindByID(newChronoWork.ID)
+					timer.SetStartTimer(updatedWork.StartTime)
 					timer.SetCalculateSeconds(tui)
-					timer.SetTimerText(newChronoWork)
-					w.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime())
+					timer.SetTimerText(*updatedWork)
+					w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime())
 					w.Table.Select(1, 0)
 				}
 			}
@@ -288,16 +295,13 @@ func (w *Work) setHeader() {
 }
 
 func (w *Work) setBody(startTime, endTime time.Time) error {
-	var chronoWork models.ChronoWork
-	var chronoWorks []models.ChronoWork
-	var err error
-	var setting models.Setting
-	if err := setting.GetSetting(db.DB); err != nil {
+	setting, err := w.settingUC.Get()
+	if err != nil {
 		log.Println(err)
 		return err
 	}
 
-	chronoWorks, err = chronoWork.FindInRangeByTime(db.DB, startTime, endTime)
+	chronoWorks, err := w.chronoWorkUC.FindInRange(startTime, endTime)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -307,7 +311,7 @@ func (w *Work) setBody(startTime, endTime time.Time) error {
 		return nil
 	}
 
-	activeTrackingChronoWorks, err := models.FindTrackingChronoWorks(db.DB)
+	activeTrackingChronoWorks, err := w.chronoWorkUC.FindTracking()
 	if err != nil {
 		log.Println(err)
 		return err
@@ -330,7 +334,7 @@ func (w *Work) setBody(startTime, endTime time.Time) error {
 		})
 	}
 
-	groupedChronoWorks := map[string][]models.ChronoWork{}
+	groupedChronoWorks := map[string][]domain.ChronoWork{}
 	for _, work := range chronoWorks {
 		dateStr := work.CreatedAt.Format("2006/01/02")
 		groupedChronoWorks[dateStr] = append(groupedChronoWorks[dateStr], work)
@@ -385,7 +389,7 @@ func (w *Work) insertBlankRow(rowCount int) {
 	}
 }
 
-func (w *Work) insertTotalSecondsByDayRow(rowCount, totalSecondsByDay, count int, setting models.Setting) {
+func (w *Work) insertTotalSecondsByDayRow(rowCount, totalSecondsByDay, count int, setting *domain.Setting) {
 	w.Table.SetCell(rowCount, 0,
 		tview.NewTableCell("Total").
 			SetAlign(tview.AlignLeft).
@@ -445,7 +449,7 @@ func (w *Work) goToBottom() {
 	w.Table.ScrollToEnd().Select(w.Table.GetRowCount()-1, 0)
 }
 
-func (w *Work) configureTable(row int, chronoWork models.ChronoWork, setting models.Setting) {
+func (w *Work) configureTable(row int, chronoWork domain.ChronoWork, setting *domain.Setting) {
 	// ID
 	confirmedColor := tcell.ColorGreen
 	if !chronoWork.Confirmed {
@@ -469,15 +473,23 @@ func (w *Work) configureTable(row int, chronoWork models.ChronoWork, setting mod
 			SetAlign(tview.AlignLeft).
 			SetExpansion(1))
 	// Project
+	projectName := ""
+	if chronoWork.ProjectType != nil {
+		projectName = chronoWork.ProjectType.Name
+	}
 	w.Table.SetCell(row, 3,
 		tview.
-			NewTableCell(chronoWork.ProjectType.Name).
+			NewTableCell(projectName).
 			SetAlign(tview.AlignLeft).
 			SetExpansion(1))
 	// Tags
+	tagName := ""
+	if chronoWork.Tag != nil {
+		tagName = chronoWork.Tag.Name
+	}
 	w.Table.SetCell(row, 4,
 		tview.
-			NewTableCell(chronoWork.Tag.Name).
+			NewTableCell(tagName).
 			SetAlign(tview.AlignLeft).
 			SetExpansion(1))
 	// TRACKING

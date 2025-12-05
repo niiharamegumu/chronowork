@@ -4,34 +4,38 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/niiharamegumu/chronowork/internal/domain"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/timeutil"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 var notSelectText = "Not Select"
 
 type Form struct {
-	Form *tview.Form
+	Form          *tview.Form
+	chronoWorkUC  *usecase.ChronoWorkUseCase
+	projectTypeUC *usecase.ProjectTypeUseCase
 }
 
-func NewForm() *Form {
+func NewForm(chronoWorkUC *usecase.ChronoWorkUseCase, projectTypeUC *usecase.ProjectTypeUseCase) *Form {
 	form := &Form{
 		Form: tview.NewForm().
 			SetButtonBackgroundColor(tcell.ColorPurple).
 			SetLabelColor(tcell.ColorPurple).
 			SetFieldTextColor(tcell.ColorGray).
 			SetFieldBackgroundColor(tcell.ColorWhite),
+		chronoWorkUC:  chronoWorkUC,
+		projectTypeUC: projectTypeUC,
 	}
 	return form
 }
 
-func (f *Form) GenerateInitForm(tui *service.TUI, work *Work) *Form {
-	f.ConfigureStoreForm(tui, work)
+func (f *Form) GenerateInitForm(tui *service.TUI, work *Work, relativeDays int) *Form {
+	f.ConfigureStoreForm(tui, work, relativeDays)
 	return f
 }
 
@@ -51,17 +55,17 @@ func (f *Form) ResetForm() {
 	f.Form.GetFormItemByLabel("Tags").(*tview.DropDown).SetOptions([]string{notSelectText}, nil).SetCurrentOption(0)
 }
 
-func (f *Form) ConfigureStoreForm(tui *service.TUI, work *Work) {
+func (f *Form) ConfigureStoreForm(tui *service.TUI, work *Work, relativeDays int) {
 	f.Form.
 		AddInputField("Title", "", 50, nil, nil).
-		AddDropDown("Project", append([]string{notSelectText}, models.AllProjectTypeNames(db.DB)...), 0, f.projectDropDownChanged).
+		AddDropDown("Project", append([]string{notSelectText}, f.projectTypeUC.GetAllNames()...), 0, f.projectDropDownChanged).
 		AddDropDown("Tags", []string{notSelectText}, 0, nil).
 		AddButton("Store", func() {
 			if err := f.store(); err != nil {
 				log.Println(err)
 				return
 			}
-			if err := work.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+			if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 				log.Println(err)
 				return
 			}
@@ -72,18 +76,17 @@ func (f *Form) ConfigureStoreForm(tui *service.TUI, work *Work) {
 		})
 }
 
-func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *models.ChronoWork) {
-	projectOptions := append([]string{notSelectText}, models.AllProjectTypeNames(db.DB)...)
+func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *domain.ChronoWork, relativeDays int) {
+	projectOptions := append([]string{notSelectText}, f.projectTypeUC.GetAllNames()...)
 	tagsOptions := []string{notSelectText}
 	f.Form.AddInputField("Title", chronoWork.Title, 50, nil, nil).
 		AddDropDown("Project", projectOptions, 0, f.projectDropDownChanged).
 		AddDropDown("Tags", tagsOptions, 0, nil)
 
-	var projectType models.ProjectType
-	if chronoWork.ProjectType.Name != "" {
-		result := db.DB.Preload("Tags").Where("name = ?", chronoWork.ProjectType.Name).Find(&projectType)
-		if result.Error != nil {
-			log.Println(result.Error)
+	if chronoWork.ProjectType != nil && chronoWork.ProjectType.Name != "" {
+		projectType, err := f.projectTypeUC.FindByName(chronoWork.ProjectType.Name)
+		if err != nil {
+			log.Println(err)
 			return
 		}
 		for i, projectOption := range projectOptions {
@@ -95,7 +98,7 @@ func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *mod
 
 		tagsOptions = append(tagsOptions, projectType.GetTagNames()...)
 		f.Form.GetFormItemByLabel("Tags").(*tview.DropDown).SetOptions(tagsOptions, nil)
-		if chronoWork.Tag.Name != "" {
+		if chronoWork.Tag != nil && chronoWork.Tag.Name != "" {
 			for i, tagOption := range tagsOptions {
 				if tagOption == chronoWork.Tag.Name {
 					f.Form.GetFormItemByLabel("Tags").(*tview.DropDown).SetCurrentOption(i)
@@ -110,7 +113,7 @@ func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *mod
 			log.Println(err)
 			return
 		}
-		if err := work.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+		if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 			log.Println(err)
 			return
 		}
@@ -121,7 +124,7 @@ func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *mod
 		})
 }
 
-func (f *Form) configureTimerForm(tui *service.TUI, work *Work, chronoWork *models.ChronoWork) {
+func (f *Form) configureTimerForm(tui *service.TUI, work *Work, chronoWork *domain.ChronoWork, relativeDays int) {
 	hour := chronoWork.TotalSeconds / 3600
 	minute := (chronoWork.TotalSeconds - hour*3600) / 60
 	second := chronoWork.TotalSeconds - hour*3600 - minute*60
@@ -134,7 +137,7 @@ func (f *Form) configureTimerForm(tui *service.TUI, work *Work, chronoWork *mode
 				log.Println(err)
 				return
 			}
-			if err := work.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime()); err != nil {
+			if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
 				log.Println(err)
 				return
 			}
@@ -150,9 +153,8 @@ func (f *Form) projectDropDownChanged(option string, optionIndex int) {
 	if f.Form.GetFormItemByLabel("Tags") == nil {
 		return
 	}
-	var projectType models.ProjectType
-	result := db.DB.Preload("Tags").Where("name = ?", option).Find(&projectType)
-	if result.Error != nil {
+	projectType, err := f.projectTypeUC.FindByName(option)
+	if err != nil {
 		tagsOptions = []string{notSelectText}
 	} else {
 		tagsOptions = append([]string{notSelectText}, projectType.GetTagNames()...)
@@ -174,7 +176,7 @@ func (f *Form) store() error {
 	var projectTypeID uint
 	var tagID uint
 	if projectVal != notSelectText {
-		projectType, err := models.FindProjectTypeByName(db.DB, projectVal)
+		projectType, err := f.projectTypeUC.FindByName(projectVal)
 		if err != nil {
 			log.Println(err)
 			return err
@@ -189,14 +191,14 @@ func (f *Form) store() error {
 		}
 	}
 
-	if _, err := models.CreateChronoWork(db.DB, title, projectTypeID, tagID); err != nil {
+	if _, err := f.chronoWorkUC.Create(title, projectTypeID, tagID); err != nil {
 		log.Println(err)
 		return err
 	}
 	return nil
 }
 
-func (f *Form) update(chronoWork *models.ChronoWork) error {
+func (f *Form) update(chronoWork *domain.ChronoWork) error {
 	title := f.Form.GetFormItemByLabel("Title").(*tview.InputField).GetText()
 	_, projectVal := f.Form.GetFormItemByLabel("Project").(*tview.DropDown).GetCurrentOption()
 	_, tagVal := f.Form.GetFormItemByLabel("Tags").(*tview.DropDown).GetCurrentOption()
@@ -207,7 +209,7 @@ func (f *Form) update(chronoWork *models.ChronoWork) error {
 	var projectTypeID uint = 0
 	var tagID uint = 0
 	if projectVal != notSelectText {
-		projectType, err := models.FindProjectTypeByName(db.DB, projectVal)
+		projectType, err := f.projectTypeUC.FindByName(projectVal)
 		if err != nil {
 			log.Println(err)
 			return err
@@ -221,7 +223,7 @@ func (f *Form) update(chronoWork *models.ChronoWork) error {
 			}
 		}
 	}
-	if err := chronoWork.UpdateChronoWork(db.DB, title, projectTypeID, tagID); err != nil {
+	if err := f.chronoWorkUC.Update(chronoWork.ID, title, projectTypeID, tagID); err != nil {
 		log.Println(err)
 		return err
 	}
@@ -229,7 +231,7 @@ func (f *Form) update(chronoWork *models.ChronoWork) error {
 	return nil
 }
 
-func (f *Form) resetTimer(chronoWork *models.ChronoWork) error {
+func (f *Form) resetTimer(chronoWork *domain.ChronoWork) error {
 	hour := f.Form.GetFormItemByLabel("Hour(0-)").(*tview.InputField).GetText()
 	minute := f.Form.GetFormItemByLabel("Minute(0-59)").(*tview.InputField).GetText()
 	second := f.Form.GetFormItemByLabel("Second(0-59)").(*tview.InputField).GetText()
@@ -246,7 +248,7 @@ func (f *Form) resetTimer(chronoWork *models.ChronoWork) error {
 		return err
 	}
 	totalSeconds := int(hourInt*3600 + minuteInt*60 + secondInt)
-	err = chronoWork.UpdateChronoWorkTotalSeconds(db.DB, totalSeconds)
+	err = f.chronoWorkUC.UpdateTotalSeconds(chronoWork.ID, totalSeconds)
 	if err != nil {
 		log.Println(err)
 		return err

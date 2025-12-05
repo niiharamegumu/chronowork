@@ -1,18 +1,21 @@
 package widgets
 
 import (
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/timeutil"
 	"github.com/rivo/tview"
 )
 
 type Menu struct {
-	List *tview.List
+	List      *tview.List
+	settingUC *usecase.SettingUseCase
 }
 
-func NewMenu() *Menu {
+func NewMenu(settingUC *usecase.SettingUseCase) *Menu {
 	return &Menu{
-		List: tview.NewList(),
+		List:      tview.NewList(),
+		settingUC: settingUC,
 	}
 }
 
@@ -23,7 +26,8 @@ func (m *Menu) addListItem(text string, shortcut rune, selected func()) *Menu {
 
 func (m *Menu) GenerateInitMenu(tui *service.TUI, work *Work, setting *Setting, project *Project) *Menu {
 	m.addListItem("Works", 'w', func() {
-		work.ReStoreTable(timeutil.RelativeStartTime(), timeutil.TodayEndTime())
+		relativeDays := m.getRelativeDays()
+		work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime())
 		tui.ChangeToPage("work")
 		tui.SetFocus("mainWorkContent")
 	})
@@ -47,4 +51,12 @@ func (m *Menu) GenerateInitMenu(tui *service.TUI, work *Work, setting *Setting, 
 	})
 	m.addListItem("Quit", 'q', tui.Quit)
 	return m
+}
+
+func (m *Menu) getRelativeDays() int {
+	setting, err := m.settingUC.Get()
+	if err != nil {
+		return 0
+	}
+	return int(setting.RelativeDate)
 }

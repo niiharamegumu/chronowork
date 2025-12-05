@@ -6,26 +6,28 @@ import (
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+	"github.com/niiharamegumu/chronowork/internal/domain"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/rivo/tview"
 )
 
 type Setting struct {
-	Form *tview.Form
+	Form      *tview.Form
+	settingUC *usecase.SettingUseCase
 }
 
-func NewSetting() *Setting {
+func NewSetting(settingUC *usecase.SettingUseCase) *Setting {
 	return &Setting{
 		Form: tview.NewForm().
 			SetLabelColor(tcell.ColorPurple),
+		settingUC: settingUC,
 	}
 }
 
 func (s *Setting) GenerateInitSetting(tui *service.TUI) {
-	var setting models.Setting
-	if err := setting.GetSetting(db.DB); err != nil {
+	setting, err := s.settingUC.Get()
+	if err != nil {
 		log.Println(err)
 		return
 	}
@@ -66,18 +68,19 @@ func (s *Setting) update() {
 		return
 	}
 
-	var setting models.Setting
-	if err = setting.GetSetting(db.DB); err != nil {
+	currentSetting, err := s.settingUC.Get()
+	if err != nil {
 		log.Println(err)
 		return
 	}
-	new := models.Setting{
+	updatedSetting := &domain.Setting{
+		ID:                 currentSetting.ID,
 		RelativeDate:       uint(dateInt),
 		PersonDay:          uint(personDayInt),
 		DisplayAsPersonDay: displayAsPersonDay,
 		DownloadPath:       downloadPath,
 	}
-	if err = setting.UpdateSetting(db.DB, new); err != nil {
+	if err = s.settingUC.Update(updatedSetting); err != nil {
 		log.Println(err)
 		return
 	}

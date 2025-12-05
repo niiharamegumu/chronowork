@@ -5,12 +5,11 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/strutil"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -23,13 +22,16 @@ var (
 )
 
 type Project struct {
-	Layout       *tview.Grid
-	Form         *tview.Form
-	ReadOnlyForm *tview.Form
-	Table        *tview.Table
+	Layout        *tview.Grid
+	Form          *tview.Form
+	ReadOnlyForm  *tview.Form
+	Table         *tview.Table
+	projectTypeUC *usecase.ProjectTypeUseCase
+	tagUC         *usecase.TagUseCase
+	chronoWorkUC  *usecase.ChronoWorkUseCase
 }
 
-func NewProject() *Project {
+func NewProject(projectTypeUC *usecase.ProjectTypeUseCase, tagUC *usecase.TagUseCase, chronoWorkUC *usecase.ChronoWorkUseCase) *Project {
 	return &Project{
 		Layout: tview.NewGrid().
 			SetRows(0, 0).
@@ -48,6 +50,9 @@ func NewProject() *Project {
 		Table: tview.NewTable().
 			SetSelectable(true, false).
 			SetFixed(1, 1),
+		projectTypeUC: projectTypeUC,
+		tagUC:         tagUC,
+		chronoWorkUC:  chronoWorkUC,
 	}
 }
 
@@ -74,7 +79,7 @@ func (p *Project) setStoreProjectForm(tui *service.TUI) {
 	p.ReadOnlyForm.Clear(true)
 
 	p.ReadOnlyForm.AddTextArea("Selected Tags", "", 50, 5, 0, nil)
-	tags := models.AllTagNames(db.DB)
+	tags := p.tagUC.GetAllNames()
 	tags = append([]string{notSelectText}, tags...)
 	p.Form.AddInputField("Project Name : ", "", 50, nil, nil).
 		AddDropDown("Tags : ", tags, 0, func(option string, optionIndex int) {
@@ -101,14 +106,14 @@ func (p *Project) setStoreProjectForm(tui *service.TUI) {
 		})
 }
 
-func (p *Project) setUpdateProjectForm(tui *service.TUI, project *models.ProjectType) {
+func (p *Project) setUpdateProjectForm(tui *service.TUI, projectID uint, projectName string, projectTagNames []string) {
 	p.Form.Clear(true)
 	p.ReadOnlyForm.Clear(true)
 
 	p.ReadOnlyForm.AddTextArea("Selected Tags", "", 50, 5, 0, nil)
-	tags := models.AllTagNames(db.DB)
+	tags := p.tagUC.GetAllNames()
 	tags = append([]string{notSelectText}, tags...)
-	p.Form.AddInputField("Project Name : ", project.Name, 50, nil, nil).
+	p.Form.AddInputField("Project Name : ", projectName, 50, nil, nil).
 		AddDropDown("Tags : ", tags, 0, func(option string, optionIndex int) {
 			link := p.ReadOnlyForm.GetFormItemByLabel("Selected Tags").(*tview.TextArea)
 			if option == notSelectText {
@@ -125,13 +130,13 @@ func (p *Project) setUpdateProjectForm(tui *service.TUI, project *models.Project
 			link.SetText(strings.Join(linkTagNames, ","), false)
 		}).
 		AddButton("Update", func() {
-			p.updateProject(project)
+			p.updateProject(projectID)
 			tui.SetFocus("projectTable")
 		}).
 		AddButton("Cancel", func() {
 			tui.SetFocus("projectTable")
 		})
-	p.ReadOnlyForm.GetFormItemByLabel("Selected Tags").(*tview.TextArea).SetText(strings.Join(project.GetTagNames(), ","), false)
+	p.ReadOnlyForm.GetFormItemByLabel("Selected Tags").(*tview.TextArea).SetText(strings.Join(projectTagNames, ","), false)
 }
 
 func (p *Project) formCapture(tui *service.TUI) {
@@ -150,37 +155,47 @@ func (p *Project) storeProject() error {
 	if projectName == "" {
 		return nil
 	}
-	project := models.ProjectType{
-		Name: projectName,
-	}
+
+	var tagIDs []uint
 	if projectTags != "" {
-		tags := models.TagsByNames(db.DB, strings.Split(projectTags, ","))
-		project.Tags = tags
+		tagNames := strings.Split(projectTags, ",")
+		tags, err := p.tagUC.FindByNames(tagNames)
+		if err == nil {
+			for _, tag := range tags {
+				tagIDs = append(tagIDs, tag.ID)
+			}
+		}
 	}
-	result := db.DB.Create(&project)
-	if result.Error != nil {
-		return result.Error
+
+	_, err := p.projectTypeUC.Create(projectName, tagIDs)
+	if err != nil {
+		return err
 	}
 	p.RestoreTable()
 
 	return nil
 }
 
-func (p *Project) updateProject(project *models.ProjectType) {
-	// TODO: It is necessary to determine the conditions under which it can be updated because it will affect the tasks connected to it.
+func (p *Project) updateProject(projectID uint) {
 	projectName := p.Form.GetFormItemByLabel("Project Name : ").(*tview.InputField).GetText()
 	projectTags := p.ReadOnlyForm.GetFormItemByLabel("Selected Tags").(*tview.TextArea).GetText()
 	if projectName == "" {
 		return
 	}
-	db.DB.Model(&project).Association("Tags").Clear()
-	project.Name = projectName
+
+	var tagIDs []uint
 	if projectTags != "" {
-		tags := models.TagsByNames(db.DB, strings.Split(projectTags, ","))
-		project.Tags = tags
+		tagNames := strings.Split(projectTags, ",")
+		tags, err := p.tagUC.FindByNames(tagNames)
+		if err == nil {
+			for _, tag := range tags {
+				tagIDs = append(tagIDs, tag.ID)
+			}
+		}
 	}
-	result := db.DB.Save(&project)
-	if result.Error != nil {
+
+	if err := p.projectTypeUC.Update(projectID, projectName, tagIDs); err != nil {
+		log.Println(err)
 		return
 	}
 	p.RestoreTable()
@@ -204,7 +219,11 @@ func (p *Project) setTableHeader() {
 }
 
 func (p *Project) setTableBody() {
-	projects := models.AllProjectTypeWithTags(db.DB)
+	projects, err := p.projectTypeUC.FindAllWithTags()
+	if err != nil {
+		log.Println(err)
+		return
+	}
 	for i, project := range projects {
 		p.Table.SetCell(i+1, 0,
 			tview.NewTableCell(fmt.Sprint(project.ID)).
@@ -241,12 +260,12 @@ func (p *Project) tableCapture(tui *service.TUI) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					unitId := uint(intId)
-					project, err := models.FindProjectTypeByID(db.DB, unitId)
+					project, err := p.projectTypeUC.FindByID(unitId)
 					if err != nil {
 						log.Println(err)
 						break
 					}
-					p.setUpdateProjectForm(tui, project)
+					p.setUpdateProjectForm(tui, project.ID, project.Name, project.GetTagNames())
 					tui.SetFocus("projectForm")
 				}
 			case 'd':
@@ -258,16 +277,13 @@ func (p *Project) tableCapture(tui *service.TUI) {
 				}
 				id := cell.Text
 
-				var projectType *models.ProjectType
-				var chronoWorks []models.ChronoWork
-				var err error
 				var intId uint64
 				isExist := false
 
 				intId, _ = strconv.ParseUint(id, 10, 0)
 				uintId := uint(intId)
-				projectType, _ = models.FindProjectTypeByID(db.DB, uintId)
-				chronoWorks, err = models.FindChronoWorksByProjectTypeID(db.DB, projectType.ID)
+				project, _ := p.projectTypeUC.FindByID(uintId)
+				chronoWorks, err := p.chronoWorkUC.FindByProjectTypeID(project.ID)
 				if err != nil {
 					break
 				}
@@ -290,7 +306,7 @@ func (p *Project) tableCapture(tui *service.TUI) {
 						AddButtons([]string{"Yes", "No"}).
 						SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 							if buttonLabel == "Yes" {
-								if err := projectType.DeleteProjectType(db.DB); err != nil {
+								if err := p.projectTypeUC.Delete(project.ID); err != nil {
 									log.Println(err)
 								}
 								p.RestoreTable()

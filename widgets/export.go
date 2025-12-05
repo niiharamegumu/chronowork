@@ -9,21 +9,24 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/timeutil"
 	"github.com/rivo/tview"
 )
 
 type Export struct {
-	Form *tview.Form
+	Form         *tview.Form
+	chronoWorkUC *usecase.ChronoWorkUseCase
+	settingUC    *usecase.SettingUseCase
 }
 
-func NewExport() *Export {
+func NewExport(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase) *Export {
 	return &Export{
 		Form: tview.NewForm().
 			SetLabelColor(tcell.ColorPurple),
+		chronoWorkUC: chronoWorkUC,
+		settingUC:    settingUC,
 	}
 }
 
@@ -45,16 +48,15 @@ func (e *Export) ReStore(tui *service.TUI) {
 }
 
 func (e *Export) export() {
-	var err error
-	var chronoWorks []models.ChronoWork
-	var setting models.Setting
-	if err := setting.GetSetting(db.DB); err != nil {
+	setting, err := e.settingUC.Get()
+	if err != nil {
 		log.Println(err)
 		return
 	}
 	path := setting.DownloadPath
 
-	if chronoWorks, err = models.GetChronoWorks(db.DB, "id", 0); err != nil {
+	chronoWorks, err := e.chronoWorkUC.GetAll("id", 0)
+	if err != nil {
 		log.Println(err)
 		return
 	}
@@ -89,11 +91,19 @@ func (e *Export) export() {
 	}
 
 	for _, c := range chronoWorks {
+		projectName := ""
+		tagName := ""
+		if c.ProjectType != nil {
+			projectName = c.ProjectType.Name
+		}
+		if c.Tag != nil {
+			tagName = c.Tag.Name
+		}
 		record := []string{
 			strconv.Itoa(int(c.ID)),
 			c.Title,
-			c.ProjectType.Name,
-			c.Tag.Name,
+			projectName,
+			tagName,
 			c.CreatedAt.Format("2006/01/02"),
 			timeutil.FormatTime(c.TotalSeconds),
 		}

@@ -3,11 +3,10 @@ package widgets
 import (
 	"fmt"
 	"strconv"
-	
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
-	"github.com/niiharamegumu/chronowork/service"
+
 	"github.com/gdamore/tcell/v2"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
+	"github.com/niiharamegumu/chronowork/service"
 	"github.com/rivo/tview"
 )
 
@@ -22,9 +21,10 @@ type Tag struct {
 	Layout *tview.Grid
 	Form   *tview.Form
 	Table  *tview.Table
+	tagUC  *usecase.TagUseCase
 }
 
-func NewTag() *Tag {
+func NewTag(tagUC *usecase.TagUseCase) *Tag {
 	return &Tag{
 		Layout: tview.NewGrid().
 			SetRows(10, 0).
@@ -38,6 +38,7 @@ func NewTag() *Tag {
 		Table: tview.NewTable().
 			SetSelectable(true, false).
 			SetFixed(1, 1),
+		tagUC: tagUC,
 	}
 }
 
@@ -70,11 +71,11 @@ func (t *Tag) tableCapture(tui *service.TUI) {
 				id := cell.Text
 				if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 					unitId := uint(intId)
-					tag, err := models.FindByTagId(db.DB, unitId)
+					tag, err := t.tagUC.FindByID(unitId)
 					if err != nil {
 						break
 					}
-					t.setUpdateTagForm(tui, tag)
+					t.setUpdateTagForm(tui, tag.ID, tag.Name)
 					tui.SetFocus("tagForm")
 				}
 
@@ -110,12 +111,12 @@ func (t *Tag) setStoreTagForm(tui *service.TUI) {
 		})
 }
 
-func (t *Tag) setUpdateTagForm(tui *service.TUI, tag models.Tag) {
+func (t *Tag) setUpdateTagForm(tui *service.TUI, tagID uint, tagName string) {
 	t.Form.Clear(true)
 	t.Form.
-		AddInputField("Name", tag.Name, 50, nil, nil).
+		AddInputField("Name", tagName, 50, nil, nil).
 		AddButton("Update", func() {
-			err := t.updateTag(tag)
+			err := t.updateTag(tagID)
 			if err != nil {
 				return
 			}
@@ -131,26 +132,21 @@ func (t *Tag) storeTag() error {
 	if tagName == "" {
 		return fmt.Errorf("tag name is empty")
 	}
-	tag := models.Tag{
-		Name: tagName,
-	}
-	result := db.DB.Create(&tag)
-	if result.Error != nil {
-		return result.Error
+	_, err := t.tagUC.Create(tagName)
+	if err != nil {
+		return err
 	}
 	t.restoreTable()
 	return nil
 }
 
-func (t *Tag) updateTag(tag models.Tag) error {
+func (t *Tag) updateTag(tagID uint) error {
 	tagName := t.Form.GetFormItemByLabel("Name").(*tview.InputField).GetText()
 	if tagName == "" {
 		return fmt.Errorf("tag name is empty")
 	}
-	tag.Name = tagName
-	result := db.DB.Save(&tag)
-	if result.Error != nil {
-		return result.Error
+	if err := t.tagUC.Update(tagID, tagName); err != nil {
+		return err
 	}
 	t.restoreTable()
 	return nil
@@ -173,7 +169,10 @@ func (t *Tag) setTableHeader() {
 }
 
 func (t *Tag) setTableBody() {
-	tags := models.FindALlTags(db.DB)
+	tags, err := t.tagUC.FindAll()
+	if err != nil {
+		return
+	}
 	for i, tag := range tags {
 		t.Table.SetCell(i+1, 0,
 			tview.NewTableCell(fmt.Sprint(tag.ID)).

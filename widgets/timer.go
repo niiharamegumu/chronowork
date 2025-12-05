@@ -3,28 +3,29 @@ package widgets
 import (
 	"context"
 	"time"
-	
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/niiharamegumu/chronowork/internal/domain"
+	"github.com/niiharamegumu/chronowork/internal/usecase"
 	"github.com/niiharamegumu/chronowork/service"
 	"github.com/niiharamegumu/chronowork/util/timeutil"
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
 type Timer struct {
-	Wrapper     *tview.Grid
-	Time        *tview.TextView
-	Title       *tview.TextView
-	CreatedDate *tview.TextView
-	ProjectName *tview.TextView
-	TagName     *tview.TextView
-	StartTime   time.Time
-	cancelCtx   context.Context
-	cancelFunc  context.CancelFunc
+	Wrapper      *tview.Grid
+	Time         *tview.TextView
+	Title        *tview.TextView
+	CreatedDate  *tview.TextView
+	ProjectName  *tview.TextView
+	TagName      *tview.TextView
+	StartTime    time.Time
+	cancelCtx    context.Context
+	cancelFunc   context.CancelFunc
+	chronoWorkUC *usecase.ChronoWorkUseCase
 }
 
-func NewTimer() *Timer {
+func NewTimer(chronoWorkUC *usecase.ChronoWorkUseCase) *Timer {
 	time := tview.NewTextView().
 		SetLabel("Timer : ").
 		SetTextColor(tcell.ColorPurple).
@@ -50,33 +51,38 @@ func NewTimer() *Timer {
 			AddItem(CreatedDate, 2, 0, 1, 1, 0, 0, false).
 			AddItem(projectName, 3, 0, 1, 1, 0, 0, false).
 			AddItem(tagName, 4, 0, 1, 1, 0, 0, false),
-		Time:        time,
-		Title:       title,
-		CreatedDate: CreatedDate,
-		ProjectName: projectName,
-		TagName:     tagName,
+		Time:         time,
+		Title:        title,
+		CreatedDate:  CreatedDate,
+		ProjectName:  projectName,
+		TagName:      tagName,
+		chronoWorkUC: chronoWorkUC,
 	}
 	return timer
 }
 
 func (t *Timer) CheckActiveTracking(tui *service.TUI) error {
-	trackingChronoWork, err := models.FindTrackingChronoWorks(db.DB)
+	trackingChronoWorks, err := t.chronoWorkUC.FindTracking()
 	if err != nil {
 		return err
 	}
-	if len(trackingChronoWork) > 0 {
-		t.SetStartTimer(trackingChronoWork[0].StartTime)
+	if len(trackingChronoWorks) > 0 {
+		t.SetStartTimer(trackingChronoWorks[0].StartTime)
 		t.SetCalculateSeconds(tui)
-		t.SetTimerText(trackingChronoWork[0])
+		t.SetTimerText(trackingChronoWorks[0])
 	}
 	return nil
 }
 
-func (t *Timer) SetTimerText(c models.ChronoWork) {
+func (t *Timer) SetTimerText(c domain.ChronoWork) {
 	t.Title.SetText(c.Title)
 	t.CreatedDate.SetText(c.CreatedAt.Format("2006-01-02 "))
-	t.ProjectName.SetText(c.ProjectType.Name)
-	t.TagName.SetText(c.Tag.Name)
+	if c.ProjectType != nil {
+		t.ProjectName.SetText(c.ProjectType.Name)
+	}
+	if c.Tag != nil {
+		t.TagName.SetText(c.Tag.Name)
+	}
 }
 
 func (t *Timer) SetStartTimer(startTime time.Time) {
