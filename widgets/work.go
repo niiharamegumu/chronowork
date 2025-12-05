@@ -2,7 +2,6 @@ package widgets
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"time"
@@ -32,15 +31,17 @@ type Work struct {
 	Table        *tview.Table
 	chronoWorkUC *usecase.ChronoWorkUseCase
 	settingUC    *usecase.SettingUseCase
+	errorHandler *service.ErrorHandler
 }
 
-func NewWork(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase) *Work {
+func NewWork(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase, errorHandler *service.ErrorHandler) *Work {
 	work := &Work{
 		Table: tview.NewTable().
 			SetSelectable(true, false).
 			SetFixed(1, 1),
 		chronoWorkUC: chronoWorkUC,
 		settingUC:    settingUC,
+		errorHandler: errorHandler,
 	}
 	return work
 }
@@ -81,7 +82,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					uintId := uint(intId)
 					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					form.Form.Clear(true)
@@ -100,7 +101,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					uintId := uint(intId)
 					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					form.Form.Clear(true)
@@ -123,10 +124,10 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 							if intId, err := strconv.ParseUint(id, 10, 0); err == nil {
 								uintId := uint(intId)
 								if err := w.chronoWorkUC.Delete(uintId); err != nil {
-									log.Println(err)
+									w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 								}
 								if err := w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
-									log.Println(err)
+									w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 								}
 							}
 						}
@@ -146,7 +147,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 				title := cell.Text
 				err := clipboard.Init()
 				if err != nil {
-					log.Println(err)
+					w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 					break
 				}
 				clipboard.Write(clipboard.FmtText, []byte(title))
@@ -162,12 +163,12 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					unitId := uint(intId)
 					chronoWork, err := w.chronoWorkUC.FindByID(unitId)
 					if err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					err = clipboard.Init()
 					if err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					clipboard.Write(clipboard.FmtText, []byte(timeutil.SecondsToHourAndMinute(chronoWork.TotalSeconds)))
@@ -184,7 +185,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					uintId := uint(intId)
 					chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 					if err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					if chronoWork.Confirmed {
@@ -193,7 +194,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 						w.chronoWorkUC.UpdateConfirmed(uintId, true)
 					}
 					if err := w.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
-						log.Println(err)
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 					}
 					w.Table.Select(row, 0)
 				}
@@ -210,12 +211,12 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 				uintId := uint(intId)
 				chronoWork, err := w.chronoWorkUC.FindByID(uintId)
 				if err != nil {
-					log.Println(err)
+					w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 					break
 				}
 				chronoWorks, err := w.chronoWorkUC.FindTracking()
 				if err != nil {
-					log.Println(err)
+					w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 					break
 				}
 				// if tracking work exists, stop tracking
@@ -223,7 +224,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					for _, cw := range chronoWorks {
 						if cw.ID != chronoWork.ID || !timeutil.IsToday(cw.CreatedAt) {
 							if err := w.chronoWorkUC.StopTracking(cw.ID); err != nil {
-								log.Println(err)
+								w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 								break
 							}
 						}
@@ -249,19 +250,7 @@ func (w *Work) TableCapture(tui *service.TUI, form *Form, timer *Timer, relative
 					// chronowork copy
 					newChronoWork, err := w.chronoWorkUC.Create(chronoWork.Title, chronoWork.ProjectTypeID, chronoWork.TagID)
 					if err != nil {
-						log.Println(err)
-						// 重複エラーの場合はモーダルで通知
-						if err.Error() == "work with this title already exists today" {
-							modal := tview.NewModal().
-								SetText("A work with this title already exists today.").
-								AddButtons([]string{"OK"}).
-								SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-									tui.DeleteModal()
-									tui.SetFocus("mainWorkContent")
-								})
-							tui.SetModal(modal)
-							tui.SetFocus("modal")
-						}
+						w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 						break
 					}
 					w.chronoWorkUC.StartTracking(newChronoWork.ID)
@@ -309,13 +298,13 @@ func (w *Work) setHeader() {
 func (w *Work) setBody(startTime, endTime time.Time) error {
 	setting, err := w.settingUC.Get()
 	if err != nil {
-		log.Println(err)
+		w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 		return err
 	}
 
 	chronoWorks, err := w.chronoWorkUC.FindInRange(startTime, endTime)
 	if err != nil {
-		log.Println(err)
+		w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 		return err
 	}
 
@@ -325,7 +314,7 @@ func (w *Work) setBody(startTime, endTime time.Time) error {
 
 	activeTrackingChronoWorks, err := w.chronoWorkUC.FindTracking()
 	if err != nil {
-		log.Println(err)
+		w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 		return err
 	}
 	if len(activeTrackingChronoWorks) > 0 {
@@ -364,7 +353,7 @@ func (w *Work) setBody(startTime, endTime time.Time) error {
 		totalSecondsByDay := 0
 		date, err := time.Parse("2006/01/02", dateStr)
 		if err != nil {
-			log.Println(err)
+			w.errorHandler.ShowErrorWithErr(err, "mainWorkContent")
 			return err
 		}
 		if date.Year() != today.Year() || date.Month() != today.Month() || date.Day() != today.Day() {

@@ -67,25 +67,28 @@ func initialSetting() error {
 		SetTextAlign(tview.AlignCenter).
 		SetText(fmt.Sprintf("Today is %s (%v)", time.Now().Format("2006/01/02"), time.Now().Weekday())).SetTextColor(tcell.ColorPurple)
 
-	// Initialize widgets with use cases
+	// Initialize ErrorHandler
+	errorHandler := service.NewErrorHandler(tui)
+
+	// Initialize widgets with use cases and error handler
 	timer := widgets.NewTimer(c.ChronoWorkUC)
 	err = timer.CheckActiveTracking(tui)
 	if err != nil {
 		return err
 	}
 
-	work := widgets.NewWork(c.ChronoWorkUC, c.SettingUC)
+	work := widgets.NewWork(c.ChronoWorkUC, c.SettingUC, errorHandler)
 	work, err = work.GenerateInitWork(tui, relativeDays)
 	if err != nil {
 		return err
 	}
 
-	form := widgets.NewForm(c.ChronoWorkUC, c.ProjectTypeUC)
+	form := widgets.NewForm(c.ChronoWorkUC, c.ProjectTypeUC, errorHandler)
 	form = form.GenerateInitForm(tui, work, relativeDays)
 
 	// add page
 	// setting page
-	settingWidget := widgets.NewSetting(c.SettingUC)
+	settingWidget := widgets.NewSetting(c.SettingUC, errorHandler)
 	settingWidget.GenerateInitSetting(tui)
 	tui.SetMainPage("setting", settingWidget.Form, false)
 	if err = tui.SetWidget("settingForm", settingWidget.Form); err != nil {
@@ -93,7 +96,7 @@ func initialSetting() error {
 	}
 
 	// project page
-	project := widgets.NewProject(c.ProjectTypeUC, c.TagUC, c.ChronoWorkUC)
+	project := widgets.NewProject(c.ProjectTypeUC, c.TagUC, c.ChronoWorkUC, errorHandler)
 	tui.SetMainPage("project", project.Layout, false)
 	if err = tui.SetWidget("projectForm", project.Form); err != nil {
 		return err
@@ -104,7 +107,7 @@ func initialSetting() error {
 	project.GenerateInitProject(tui)
 
 	// tag page
-	tagPage := widgets.NewTag(c.TagUC)
+	tagPage := widgets.NewTag(c.TagUC, errorHandler)
 	tagPage.GenerateInitTag(tui)
 	tui.SetMainPage("tag", tagPage.Layout, false)
 	if err = tui.SetWidget("tagForm", tagPage.Form); err != nil {
@@ -115,7 +118,7 @@ func initialSetting() error {
 	}
 
 	// export page
-	export := widgets.NewExport(c.ChronoWorkUC, c.SettingUC)
+	export := widgets.NewExport(c.ChronoWorkUC, c.SettingUC, errorHandler)
 	export.GenerateInitExport(tui)
 	tui.SetMainPage("export", export.Form, false)
 	if err = tui.SetWidget("exportForm", export.Form); err != nil {

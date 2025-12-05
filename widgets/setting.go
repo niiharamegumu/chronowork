@@ -2,7 +2,6 @@ package widgets
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,22 +12,24 @@ import (
 )
 
 type Setting struct {
-	Form      *tview.Form
-	settingUC *usecase.SettingUseCase
+	Form         *tview.Form
+	settingUC    *usecase.SettingUseCase
+	errorHandler *service.ErrorHandler
 }
 
-func NewSetting(settingUC *usecase.SettingUseCase) *Setting {
+func NewSetting(settingUC *usecase.SettingUseCase, errorHandler *service.ErrorHandler) *Setting {
 	return &Setting{
 		Form: tview.NewForm().
 			SetLabelColor(tcell.ColorPurple),
-		settingUC: settingUC,
+		settingUC:    settingUC,
+		errorHandler: errorHandler,
 	}
 }
 
 func (s *Setting) GenerateInitSetting(tui *service.TUI) {
 	setting, err := s.settingUC.Get()
 	if err != nil {
-		log.Println(err)
+		s.errorHandler.ShowErrorWithErr(err, "settingForm")
 		return
 	}
 	s.Form.AddInputField("Show Relative Date(0:Today Only) : ", fmt.Sprint(setting.RelativeDate), 20, nil, nil).
@@ -60,17 +61,17 @@ func (s *Setting) update() {
 	var dateInt, personDayInt int
 	var err error
 	if dateInt, err = strconv.Atoi(relativeDate); err != nil {
-		log.Println(err)
+		s.errorHandler.ShowErrorWithErr(err, "settingForm")
 		return
 	}
 	if personDayInt, err = strconv.Atoi(personDay); err != nil {
-		log.Println(err)
+		s.errorHandler.ShowErrorWithErr(err, "settingForm")
 		return
 	}
 
 	currentSetting, err := s.settingUC.Get()
 	if err != nil {
-		log.Println(err)
+		s.errorHandler.ShowErrorWithErr(err, "settingForm")
 		return
 	}
 	updatedSetting := &domain.Setting{
@@ -81,7 +82,7 @@ func (s *Setting) update() {
 		DownloadPath:       downloadPath,
 	}
 	if err = s.settingUC.Update(updatedSetting); err != nil {
-		log.Println(err)
+		s.errorHandler.ShowErrorWithErr(err, "settingForm")
 		return
 	}
 }

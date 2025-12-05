@@ -2,7 +2,6 @@ package widgets
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -29,9 +28,10 @@ type Project struct {
 	projectTypeUC *usecase.ProjectTypeUseCase
 	tagUC         *usecase.TagUseCase
 	chronoWorkUC  *usecase.ChronoWorkUseCase
+	errorHandler  *service.ErrorHandler
 }
 
-func NewProject(projectTypeUC *usecase.ProjectTypeUseCase, tagUC *usecase.TagUseCase, chronoWorkUC *usecase.ChronoWorkUseCase) *Project {
+func NewProject(projectTypeUC *usecase.ProjectTypeUseCase, tagUC *usecase.TagUseCase, chronoWorkUC *usecase.ChronoWorkUseCase, errorHandler *service.ErrorHandler) *Project {
 	return &Project{
 		Layout: tview.NewGrid().
 			SetRows(0, 0).
@@ -53,6 +53,7 @@ func NewProject(projectTypeUC *usecase.ProjectTypeUseCase, tagUC *usecase.TagUse
 		projectTypeUC: projectTypeUC,
 		tagUC:         tagUC,
 		chronoWorkUC:  chronoWorkUC,
+		errorHandler:  errorHandler,
 	}
 }
 
@@ -195,7 +196,7 @@ func (p *Project) updateProject(projectID uint) {
 	}
 
 	if err := p.projectTypeUC.Update(projectID, projectName, tagIDs); err != nil {
-		log.Println(err)
+		p.errorHandler.ShowErrorWithErr(err, "projectTable")
 		return
 	}
 	p.RestoreTable()
@@ -221,7 +222,7 @@ func (p *Project) setTableHeader() {
 func (p *Project) setTableBody() {
 	projects, err := p.projectTypeUC.FindAllWithTags()
 	if err != nil {
-		log.Println(err)
+		p.errorHandler.ShowErrorWithErr(err, "projectTable")
 		return
 	}
 	for i, project := range projects {
@@ -262,7 +263,7 @@ func (p *Project) tableCapture(tui *service.TUI) {
 					unitId := uint(intId)
 					project, err := p.projectTypeUC.FindByID(unitId)
 					if err != nil {
-						log.Println(err)
+						p.errorHandler.ShowErrorWithErr(err, "projectTable")
 						break
 					}
 					p.setUpdateProjectForm(tui, project.ID, project.Name, project.GetTagNames())
@@ -307,7 +308,7 @@ func (p *Project) tableCapture(tui *service.TUI) {
 						SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 							if buttonLabel == "Yes" {
 								if err := p.projectTypeUC.Delete(project.ID); err != nil {
-									log.Println(err)
+									p.errorHandler.ShowErrorWithErr(err, "projectTable")
 								}
 								p.RestoreTable()
 							}

@@ -2,7 +2,6 @@ package widgets
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
@@ -19,9 +18,10 @@ type Form struct {
 	Form          *tview.Form
 	chronoWorkUC  *usecase.ChronoWorkUseCase
 	projectTypeUC *usecase.ProjectTypeUseCase
+	errorHandler  *service.ErrorHandler
 }
 
-func NewForm(chronoWorkUC *usecase.ChronoWorkUseCase, projectTypeUC *usecase.ProjectTypeUseCase) *Form {
+func NewForm(chronoWorkUC *usecase.ChronoWorkUseCase, projectTypeUC *usecase.ProjectTypeUseCase, errorHandler *service.ErrorHandler) *Form {
 	form := &Form{
 		Form: tview.NewForm().
 			SetButtonBackgroundColor(tcell.ColorPurple).
@@ -30,6 +30,7 @@ func NewForm(chronoWorkUC *usecase.ChronoWorkUseCase, projectTypeUC *usecase.Pro
 			SetFieldBackgroundColor(tcell.ColorWhite),
 		chronoWorkUC:  chronoWorkUC,
 		projectTypeUC: projectTypeUC,
+		errorHandler:  errorHandler,
 	}
 	return form
 }
@@ -62,11 +63,11 @@ func (f *Form) ConfigureStoreForm(tui *service.TUI, work *Work, relativeDays int
 		AddDropDown("Tags", []string{notSelectText}, 0, nil).
 		AddButton("Store", func() {
 			if err := f.store(); err != nil {
-				log.Println(err)
+				f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 				return
 			}
 			if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
-				log.Println(err)
+				f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 				return
 			}
 			tui.SetFocus("mainWorkContent")
@@ -86,7 +87,7 @@ func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *dom
 	if chronoWork.ProjectType != nil && chronoWork.ProjectType.Name != "" {
 		projectType, err := f.projectTypeUC.FindByName(chronoWork.ProjectType.Name)
 		if err != nil {
-			log.Println(err)
+			f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 			return
 		}
 		for i, projectOption := range projectOptions {
@@ -110,11 +111,11 @@ func (f *Form) configureUpdateForm(tui *service.TUI, work *Work, chronoWork *dom
 
 	f.Form.AddButton("Update", func() {
 		if err := f.update(chronoWork); err != nil {
-			log.Println(err)
+			f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 			return
 		}
 		if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
-			log.Println(err)
+			f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 			return
 		}
 		tui.SetFocus("mainWorkContent")
@@ -134,11 +135,11 @@ func (f *Form) configureTimerForm(tui *service.TUI, work *Work, chronoWork *doma
 		AddInputField("Second(0-59)", fmt.Sprint(second), 20, nil, nil).
 		AddButton("Reset", func() {
 			if err := f.resetTimer(chronoWork); err != nil {
-				log.Println(err)
+				f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 				return
 			}
 			if err := work.ReStoreTable(timeutil.RelativeStartTimeWithDays(relativeDays), timeutil.TodayEndTime()); err != nil {
-				log.Println(err)
+				f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 				return
 			}
 			tui.SetFocus("mainWorkContent")
@@ -178,7 +179,7 @@ func (f *Form) store() error {
 	if projectVal != notSelectText {
 		projectType, err := f.projectTypeUC.FindByName(projectVal)
 		if err != nil {
-			log.Println(err)
+			f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 			return err
 		}
 		projectTypeID = projectType.ID
@@ -193,11 +194,7 @@ func (f *Form) store() error {
 
 	// 4. ユースケースを呼び出す（ビジネスロジックに委譲）
 	if _, err := f.chronoWorkUC.Create(title, projectTypeID, tagID); err != nil {
-		log.Println(err)
-		// エラーメッセージを表示（重複エラーの場合）
-		if err.Error() == "work with this title already exists today" {
-			log.Printf("Duplicate title detected: %s", title)
-		}
+		f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 		return err
 	}
 	return nil
@@ -216,7 +213,7 @@ func (f *Form) update(chronoWork *domain.ChronoWork) error {
 	if projectVal != notSelectText {
 		projectType, err := f.projectTypeUC.FindByName(projectVal)
 		if err != nil {
-			log.Println(err)
+			f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 			return err
 		}
 		projectTypeID = projectType.ID
@@ -229,7 +226,7 @@ func (f *Form) update(chronoWork *domain.ChronoWork) error {
 		}
 	}
 	if err := f.chronoWorkUC.Update(chronoWork.ID, title, projectTypeID, tagID); err != nil {
-		log.Println(err)
+		f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 		return err
 	}
 
@@ -255,7 +252,7 @@ func (f *Form) resetTimer(chronoWork *domain.ChronoWork) error {
 	totalSeconds := int(hourInt*3600 + minuteInt*60 + secondInt)
 	err = f.chronoWorkUC.UpdateTotalSeconds(chronoWork.ID, totalSeconds)
 	if err != nil {
-		log.Println(err)
+		f.errorHandler.ShowErrorWithErr(err, "mainWorkForm")
 		return err
 	}
 

@@ -18,13 +18,14 @@ var (
 )
 
 type Tag struct {
-	Layout *tview.Grid
-	Form   *tview.Form
-	Table  *tview.Table
-	tagUC  *usecase.TagUseCase
+	Layout       *tview.Grid
+	Form         *tview.Form
+	Table        *tview.Table
+	tagUC        *usecase.TagUseCase
+	errorHandler *service.ErrorHandler
 }
 
-func NewTag(tagUC *usecase.TagUseCase) *Tag {
+func NewTag(tagUC *usecase.TagUseCase, errorHandler *service.ErrorHandler) *Tag {
 	return &Tag{
 		Layout: tview.NewGrid().
 			SetRows(10, 0).
@@ -38,7 +39,8 @@ func NewTag(tagUC *usecase.TagUseCase) *Tag {
 		Table: tview.NewTable().
 			SetSelectable(true, false).
 			SetFixed(1, 1),
-		tagUC: tagUC,
+		tagUC:        tagUC,
+		errorHandler: errorHandler,
 	}
 }
 

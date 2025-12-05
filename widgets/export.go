@@ -3,7 +3,6 @@ package widgets
 import (
 	"encoding/csv"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -19,14 +18,16 @@ type Export struct {
 	Form         *tview.Form
 	chronoWorkUC *usecase.ChronoWorkUseCase
 	settingUC    *usecase.SettingUseCase
+	errorHandler *service.ErrorHandler
 }
 
-func NewExport(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase) *Export {
+func NewExport(chronoWorkUC *usecase.ChronoWorkUseCase, settingUC *usecase.SettingUseCase, errorHandler *service.ErrorHandler) *Export {
 	return &Export{
 		Form: tview.NewForm().
 			SetLabelColor(tcell.ColorPurple),
 		chronoWorkUC: chronoWorkUC,
 		settingUC:    settingUC,
+		errorHandler: errorHandler,
 	}
 }
 
@@ -50,21 +51,21 @@ func (e *Export) ReStore(tui *service.TUI) {
 func (e *Export) export() {
 	setting, err := e.settingUC.Get()
 	if err != nil {
-		log.Println(err)
+		e.errorHandler.ShowErrorWithErr(err, "exportForm")
 		return
 	}
 	path := setting.DownloadPath
 
 	chronoWorks, err := e.chronoWorkUC.GetAll("id", 0)
 	if err != nil {
-		log.Println(err)
+		e.errorHandler.ShowErrorWithErr(err, "exportForm")
 		return
 	}
 	if len(chronoWorks) < 1 {
 		return
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Println(err)
+		e.errorHandler.ShowErrorWithErr(err, "exportForm")
 		return
 	}
 	if path[len(path)-1:] != "/" {
@@ -76,7 +77,7 @@ func (e *Export) export() {
 
 	f, err := os.Create(exportPath)
 	if err != nil {
-		log.Println(err)
+		e.errorHandler.ShowErrorWithErr(err, "exportForm")
 		return
 	}
 	defer f.Close()
@@ -86,7 +87,7 @@ func (e *Export) export() {
 
 	header := []string{"ID", "Title", "ProjectName", "TagName", "Date", "Time"}
 	if err := w.Write(header); err != nil {
-		log.Println(err)
+		e.errorHandler.ShowErrorWithErr(err, "exportForm")
 		return
 	}
 
@@ -108,7 +109,7 @@ func (e *Export) export() {
 			timeutil.FormatTime(c.TotalSeconds),
 		}
 		if err := w.Write(record); err != nil {
-			log.Println(err)
+			e.errorHandler.ShowErrorWithErr(err, "exportForm")
 			continue
 		}
 	}
