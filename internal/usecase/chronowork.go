@@ -2,7 +2,6 @@
 package usecase
 
 import (
-	"errors"
 	"time"
 
 	"github.com/niiharamegumu/chronowork/internal/domain"
@@ -27,7 +26,7 @@ func (uc *ChronoWorkUseCase) Create(title string, projectTypeID, tagID uint) (*d
 		return nil, err
 	}
 	if existing != nil {
-		return nil, errors.New("work with this title already exists today")
+		return nil, NewDuplicateError("work with this title already exists today")
 	}
 
 	return uc.repo.Create(title, projectTypeID, tagID)
