@@ -76,7 +76,7 @@ func (r *GormChronoWorkRepository) FindTracking() ([]domain.ChronoWork, error) {
 
 // FindByTitleToday finds a ChronoWork by title created today.
 func (r *GormChronoWorkRepository) FindByTitleToday(title string) (*domain.ChronoWork, error) {
-	var chronoWork models.ChronoWork
+	var chronoWorks []models.ChronoWork
 	today := time.Now()
 	startOfDay := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
 	endOfDay := time.Date(today.Year(), today.Month(), today.Day(), 23, 59, 59, 0, time.Local)
@@ -85,15 +85,18 @@ func (r *GormChronoWorkRepository) FindByTitleToday(title string) (*domain.Chron
 		Preload("ProjectType").
 		Preload("Tag").
 		Where("title = ? AND created_at >= ? AND created_at <= ?", title, startOfDay, endOfDay).
-		First(&chronoWork).Error
+		Find(&chronoWorks).Error
 
-	if err == gorm.ErrRecordNotFound {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}
-	return r.toDomain(&chronoWork), nil
+
+	// 見つからない場合はnilを返す（エラーではない）
+	if len(chronoWorks) == 0 {
+		return nil, nil
+	}
+
+	return r.toDomain(&chronoWorks[0]), nil
 }
 
 // FindByProjectTypeID finds ChronoWorks by project type ID.
