@@ -3,11 +3,9 @@ package timeutil
 import (
 	"fmt"
 	"time"
-
-	"github.com/niiharamegumu/chronowork/db"
-	"github.com/niiharamegumu/chronowork/models"
 )
 
+// FormatTime formats seconds into HH:MM:SS format.
 func FormatTime(seconds int) string {
 	if seconds >= 3600 {
 		return fmt.Sprintf("%02d:%02d:%02d", seconds/3600, (seconds%3600)/60, seconds%60)
@@ -18,6 +16,7 @@ func FormatTime(seconds int) string {
 	}
 }
 
+// FormatWithPersonDay formats seconds with optional person-day calculation.
 func FormatWithPersonDay(seconds int, personDay uint, display bool) string {
 	ft := FormatTime(seconds)
 	if personDay < 1 || !display {
@@ -27,28 +26,26 @@ func FormatWithPersonDay(seconds int, personDay uint, display bool) string {
 	return fmt.Sprintf("%v(%.2f)", ft, hour/float64(personDay))
 }
 
+// TodayEndTime returns the end of today (23:59:59).
 func TodayEndTime() time.Time {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, time.Local)
 }
 
-func RelativeStartTime() time.Time {
+// RelativeStartTimeWithDays returns the start of today minus the specified number of days.
+func RelativeStartTimeWithDays(days int) time.Time {
 	now := time.Now()
 	startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
-	var setting models.Setting
-	if err := setting.GetSetting(db.DB); err != nil {
-		return startTime
-	}
-
-	return startTime.AddDate(0, 0, -int(setting.RelativeDate))
+	return startTime.AddDate(0, 0, -days)
 }
 
+// IsToday checks if the given time is today.
 func IsToday(t time.Time) bool {
 	now := time.Now()
 	return t.Year() == now.Year() && t.Month() == now.Month() && t.Day() == now.Day()
 }
 
+// SecondsToHourAndMinute returns the HH:MM portion of formatted time.
 func SecondsToHourAndMinute(seconds int) string {
 	time := FormatTime(seconds)
 	return time[:5]
